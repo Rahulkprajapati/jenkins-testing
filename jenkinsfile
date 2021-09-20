@@ -1,0 +1,60 @@
+pipeline {
+    agent any
+    environment {
+        tag = '${BUILD_NUMBER}'
+        IMAGE_NAME = 'mig-update-image'
+        GCE_INSTANCE_NAME = 'rahulprajapati-instance-1'
+        ZONE = 'asia-east1-b'
+        PROJECT = 'searce-playground'
+        PROJECT_ID = 'searce-playground'
+        INSTANCE_TEMPLATE_NAME = 'mig_template_launch'
+        MACHINE_TYPE = 'e2-micro'
+        SUBNETWORK = 'rahulprajapati-subnet-1'
+        REGION = 'asia-east1'
+        SERVICE_ACCOUNT = 'rahulprajapati-mig-pipeline-ac@searce-playground.iam.gserviceaccount.com'
+        TAGS = 'http-server,https-server'
+        IMAGE_PROJECT_ID = 'searce-playground'
+        MIG_NAME = 'mig-rahul-jenkins-testing'
+
+    }
+    stages {
+        stage('Create Image') {
+            steps {
+                sh "gcloud compute images create ${env.IMAGE_NAME}-tag \
+  --source-disk=${env.GCE_INSTANCE_NAME} \
+  --source-disk-zone=${env.ZONE} --project ${env.PROJECT}"
+            }
+        }
+        stage('create instance template') {
+            steps {
+                sh "gcloud beta compute --project=${env.PROJECT_ID} instance-templates create ${env.INSTANCE_TEMPLATE_NAME}-tag \
+    --machine-type=${env.MACHINE_TYPE} \
+    --subnet=projects/${env.PROJECT_ID}/regions/${REGION}/subnetworks/${env.SUBNETWORK} \
+    --no-address \
+    --maintenance-policy=MIGRATE \
+    --service-account=${env.SERVICE_ACCOUNT} \
+    --scopes=https://www.googleapis.com/auth/cloud-platform \
+    --region=${env.REGION} \
+    --tags=${env.TAGS} \
+    --image=${env.IMAGE_NAME}-tag \
+    --image-project=${env.IMAGE_PROJECT_ID} \
+    --boot-disk-size=30GB \
+    --boot-disk-type=pd-balanced \
+    --boot-disk-device-name=${env.INSTANCE_TEMPLATE_NAME}-tag \
+    --no-shielded-secure-boot \
+    --shielded-vtpm \
+    --shielded-integrity-monitoring \
+    --reservation-affinity=any"
+            }
+        }
+        stage('Update MIG') {
+            steps {
+            sh "gcloud compute instance-groups managed rolling-action start-update ${env.MIG_NAME}-tag \
+    --version=template=${env.INSTANCE_TEMPLATE_NAME}-tag \
+    --type=proactive \
+    --zone=${env.ZONE} \
+    --project=${env.PROJECT_ID}"
+            }
+        }
+    }
+}
